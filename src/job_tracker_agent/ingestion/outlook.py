@@ -22,7 +22,7 @@ OUTLOOK_SCOPES = ["Mail.Read", "User.Read"]
 
 DEFAULT_MICROSOFT_CLIENT_ID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
 GRAPH_ENDPOINT = "https://graph.microsoft.com/v1.0"
-CONSUMER_REDIRECT_URI = "https://login.live.com/oauth20_desktop.srf"
+NATIVE_REDIRECT_URI = "https://login.microsoftonline.com/common/oauth2/nativeclient"
 
 
 class OutlookProvider(BaseMailProvider):
@@ -99,7 +99,7 @@ class OutlookProvider(BaseMailProvider):
         """Authorize via browser and copy-pasting the redirected URL (tailored for personal MSA)."""
         flow = self._app.initiate_auth_code_flow(
             scopes=OUTLOOK_SCOPES,
-            redirect_uri=CONSUMER_REDIRECT_URI,
+            redirect_uri=NATIVE_REDIRECT_URI,
             prompt="consent",
         )
         auth_url = flow.get("auth_uri")
@@ -138,12 +138,12 @@ class OutlookProvider(BaseMailProvider):
             "\n[bold yellow]Step 2:[/bold yellow] Sign in with your Microsoft/Outlook account and click [bold]Accept[/bold] (or [bold]Yes[/bold])."
         )
         console.print(
-            "[bold yellow]Step 3:[/bold yellow] Your browser will redirect to a blank or confirmation page starting with:\n"
-            "         [cyan]https://login.live.com/oauth20_desktop.srf?code=...[/cyan]\n\n"
+            "[bold yellow]Step 3:[/bold yellow] Your browser will redirect to a page starting with:\n"
+            "         [cyan]https://login.microsoftonline.com/common/oauth2/nativeclient?code=...[/cyan]\n\n"
             "         [bold]Copy the entire URL from your browser address bar[/bold] and paste it below:\n"
         )
 
-        pasted = input("Paste redirected URL (starts with https://login.live.com/...): ").strip()
+        pasted = input("Paste redirected URL (starts with https://login.microsoftonline.com/...): ").strip()
         if not pasted:
             return False
 
