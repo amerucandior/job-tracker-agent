@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import logging
+import subprocess
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 import webbrowser
@@ -9,7 +10,7 @@ import msal
 import requests
 from rich.console import Console
 
-from job_tracker_agent.config import load_tokens, save_tokens
+from job_tracker_agent.config import get_config_dir, load_tokens, save_tokens
 from job_tracker_agent.ingestion.base import BaseMailProvider, clean_html_to_text
 from job_tracker_agent.models import EmailMessage, IngestionProvider
 
@@ -95,7 +96,7 @@ class OutlookProvider(BaseMailProvider):
             return self._authenticate_code_paste()
 
     def _authenticate_code_paste(self) -> bool:
-        """Authorize via browser and copy-pasting the redirected URL (most reliable for personal MSA)."""
+        """Authorize via browser and copy-pasting the redirected URL."""
         flow = self._app.initiate_auth_code_flow(
             scopes=OUTLOOK_SCOPES,
             redirect_uri=NATIVE_REDIRECT_URI,
@@ -104,22 +105,40 @@ class OutlookProvider(BaseMailProvider):
         if not auth_url:
             raise RuntimeError("Failed to initiate Microsoft OAuth authorization code flow.")
 
-        console.print("\n[bold yellow]Step 1:[/bold yellow] Opening authorization URL in your browser...")
-        console.print(f"[cyan]{auth_url}[/cyan]\n")
+        # Create a local redirect launcher to avoid terminal URL truncation of '&' query params
+        auth_html_path = get_config_dir() / "ms_auth.html"
+        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Redirecting to Microsoft Sign In...</title>
+    <meta http-equiv="refresh" content="0; url='{auth_url}'">
+</head>
+<body style="font-family: sans-serif; padding: 40px; text-align: center;">
+    <h2>Redirecting to Microsoft Sign In...</h2>
+    <p>If you are not redirected automatically within 3 seconds, <a href="{auth_url}">click here to sign in</a>.</p>
+</body>
+</html>"""
+        auth_html_path.write_text(html_content, encoding="utf-8")
+
+        console.print("\n[bold yellow]Step 1:[/bold yellow] Opening Microsoft sign-in page in your browser...")
         try:
-            webbrowser.open(auth_url)
+            subprocess.run(["xdg-open", str(auth_html_path)], check=False)
         except Exception:
-            pass
+            try:
+                webbrowser.open(f"file://{auth_html_path}")
+            except Exception:
+                pass
 
         console.print(
-            "[bold yellow]Step 2:[/bold yellow] Sign in with your Microsoft/Outlook account and click [bold]Accept[/bold]."
+            "\n[bold yellow]Step 2:[/bold yellow] Sign in with your Microsoft/Outlook account and click [bold]Accept[/bold]."
         )
         console.print(
-            "[bold yellow]Step 3:[/bold yellow] Your browser will redirect to a blank or confirmation page.\n"
+            "[bold yellow]Step 3:[/bold yellow] When sign in finishes, your browser will redirect to a blank or confirmation page.\n"
             "         [bold]Copy the entire URL from your browser address bar[/bold] and paste it below:\n"
         )
 
-        pasted = input("Paste redirected URL (starts with https://login.microsoftonline.com/...): ").strip()
+        pasted = input("Paste redirected URL (or code): ").strip()
         if not pasted:
             return False
 
