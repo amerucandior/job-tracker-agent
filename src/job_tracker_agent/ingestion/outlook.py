@@ -100,6 +100,7 @@ class OutlookProvider(BaseMailProvider):
         flow = self._app.initiate_auth_code_flow(
             scopes=OUTLOOK_SCOPES,
             redirect_uri=CONSUMER_REDIRECT_URI,
+            prompt="consent",
         )
         auth_url = flow.get("auth_uri")
         if not auth_url:
