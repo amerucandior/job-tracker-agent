@@ -1,0 +1,32 @@
+[project]
+name = "job-tracker-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "ianmwirigi", email = "ianmwirigi@outlook.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+job-tracker = "job_tracker_agent.cli:main"
+job-tracker-agent = "job_tracker_agent.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "google-api-python-client>=2.201.0",
+    "google-auth-oauthlib>=1.5.0",
+    "msal>=1.39.0",
+    "notion-client>=3.1.0",
+    "pydantic>=2.14.3",
+    "pytest>=9.2.0",
+    "requests>=2.34.2",
+    "rich>=15.0.0",
+    "tomli-w>=1.2.0",
+    "typer>=0.28.0",
+]
