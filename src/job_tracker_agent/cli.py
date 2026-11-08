@@ -74,9 +74,9 @@ def auth_outlook(
         help="Azure AD / Microsoft Entra Application (Client) ID.",
     ),
     device_code: bool = typer.Option(
-        False,
-        "--device-code",
-        help="Use device code flow instead of browser redirect.",
+        True,
+        "--device-code/--browser",
+        help="Use device code flow (default) or browser redirect.",
     ),
 ) -> None:
     """Authenticate an Outlook / Microsoft 365 account via Microsoft Graph."""

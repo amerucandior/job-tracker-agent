@@ -5,12 +5,14 @@ import logging
 from typing import Any, Optional
 import msal
 import requests
+from rich.console import Console
 
 from job_tracker_agent.config import load_tokens, save_tokens
 from job_tracker_agent.ingestion.base import BaseMailProvider, clean_html_to_text
 from job_tracker_agent.models import EmailMessage, IngestionProvider
 
 logger = logging.getLogger(__name__)
+console = Console()
 
 # Microsoft Graph scopes for reading user email and profile
 OUTLOOK_SCOPES = ["Mail.Read", "User.Read"]
@@ -61,8 +63,8 @@ class OutlookProvider(BaseMailProvider):
             }
             save_tokens(tokens)
 
-    def authenticate(self, interactive: bool = True, device_code: bool = False) -> bool:
-        """Authenticate using stored MSAL cache, browser redirect, or device code flow."""
+    def authenticate(self, interactive: bool = True, device_code: bool = True) -> bool:
+        """Authenticate using stored MSAL cache, device code, or browser flow."""
         accounts = self._app.get_accounts()
 
         # 1. Attempt silent token acquisition
@@ -83,12 +85,19 @@ class OutlookProvider(BaseMailProvider):
             flow = self._app.initiate_device_flow(scopes=OUTLOOK_SCOPES)
             if "user_code" not in flow:
                 raise RuntimeError(f"Failed to initiate Microsoft device code flow: {flow}")
-            print(f"\n{flow.get('message', 'Please visit https://login.microsoft.com/device and enter the code.')}\n")
-            print("Waiting for browser confirmation... (make sure you complete the 'Consent' / 'Accept' prompt in your browser)\n")
-            result = self._app.acquire_token_by_device_flow(flow)
+
+            user_code = flow["user_code"]
+            verify_url = flow.get("verification_uri", "https://login.microsoft.com/device")
+
+            console.print(f"\n[bold yellow]Step 1:[/bold yellow] Open [cyan]{verify_url}[/cyan] in your browser.")
+            console.print(f"[bold yellow]Step 2:[/bold yellow] Enter the code: [bold green]{user_code}[/bold green]")
+            console.print(f"[bold yellow]Step 3:[/bold yellow] Sign in and click [bold]Accept[/bold] on the permissions prompt.\n")
+
+            with console.status("[bold cyan]Waiting for you to complete authorization in browser...[/bold cyan]"):
+                result = self._app.acquire_token_by_device_flow(flow)
         else:
             try:
-                print("Opening browser for authentication on http://localhost:8080...")
+                console.print("[cyan]Opening browser for authentication on http://localhost:8080...[/cyan]")
                 result = self._app.acquire_token_interactive(
                     scopes=OUTLOOK_SCOPES,
                     port=8080,
@@ -99,9 +108,9 @@ class OutlookProvider(BaseMailProvider):
                 flow = self._app.initiate_device_flow(scopes=OUTLOOK_SCOPES)
                 if "user_code" not in flow:
                     raise RuntimeError("Failed to initiate Microsoft device code authentication flow.")
-                print(f"\n{flow.get('message', 'Please visit https://login.microsoft.com/device and enter the code.')}\n")
-                print("Waiting for browser confirmation...\n")
-                result = self._app.acquire_token_by_device_flow(flow)
+                console.print(f"\nVisit [cyan]{flow.get('verification_uri')}[/cyan] and enter [bold green]{flow['user_code']}[/bold green]\n")
+                with console.status("[bold cyan]Waiting for browser authorization...[/bold cyan]"):
+                    result = self._app.acquire_token_by_device_flow(flow)
 
         if result and "access_token" in result:
             self._access_token = result["access_token"]
