@@ -123,6 +123,9 @@ class OutlookProvider(BaseMailProvider):
         auth_html_path.write_text(html_content, encoding="utf-8")
 
         console.print("\n[bold yellow]Step 1:[/bold yellow] Opening Microsoft sign-in page in your browser...")
+        console.print(f"[dim]If your browser has conflicting cookies or shows an error, copy this link into an [bold]Incognito / Private Window[/bold]:[/dim]")
+        console.print(f"[cyan]{auth_url}[/cyan]\n")
+
         try:
             subprocess.run(["xdg-open", str(auth_html_path)], check=False)
         except Exception:
