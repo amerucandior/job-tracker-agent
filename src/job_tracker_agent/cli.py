@@ -207,11 +207,18 @@ def sync_emails(
 
 @service_app.command("install")
 def service_install(
-    interval_minutes: int = typer.Option(30, "--interval", "-i", help="Polling interval in minutes")
+    interval_minutes: Optional[int] = typer.Option(
+        None, "--interval", "-i", help="Polling interval in minutes (if using minute intervals)"
+    ),
+    schedule: str = typer.Option(
+        "weekly", "--schedule", "-s", help="Schedule format ('weekly', 'daily', or systemd calendar expression)"
+    ),
 ) -> None:
     """Generate and install user systemd service and timer units."""
     working_dir = Path(__file__).resolve().parent.parent.parent
-    service_file, timer_file = generate_service_units(working_dir, interval_minutes=interval_minutes)
+    service_file, timer_file = generate_service_units(
+        working_dir, interval_minutes=interval_minutes, schedule=schedule
+    )
     console.print(f"[green]✓ Wrote service unit:[/green] {service_file}")
     console.print(f"[green]✓ Wrote timer unit:[/green] {timer_file}")
 

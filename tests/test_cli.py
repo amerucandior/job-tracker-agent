@@ -35,3 +35,9 @@ def test_generate_service_units(tmp_path, monkeypatch):
 
     assert "job-tracker sync" in service_text
     assert "OnUnitActiveSec=45m" in timer_text
+
+    # Test weekly schedule
+    _, timer_weekly = generate_service_units(tmp_path, schedule="weekly")
+    weekly_text = timer_weekly.read_text()
+    assert "OnCalendar=weekly" in weekly_text
+

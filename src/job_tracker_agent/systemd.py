@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,8 @@ def get_systemd_user_dir() -> Path:
 
 def generate_service_units(
     working_dir: Path,
-    interval_minutes: int = 30,
+    interval_minutes: Optional[int] = None,
+    schedule: Optional[str] = None,
 ) -> tuple[Path, Path]:
     """Generate and write job-tracker.service and job-tracker.timer units."""
     systemd_dir = get_systemd_user_dir()
@@ -70,14 +72,21 @@ StandardError=journal
 WantedBy=default.target
 """
 
+    if interval_minutes is not None:
+        timer_schedule = f"""OnBootSec=3m
+OnStartupSec=1m
+OnUnitActiveSec={interval_minutes}m"""
+    else:
+        sched = schedule or "weekly"
+        timer_schedule = f"""OnBootSec=5m
+OnCalendar={sched}"""
+
     timer_content = f"""[Unit]
 Description=Job Tracker Agent sync timer
 Requires=job-tracker.service
 
 [Timer]
-OnBootSec=3m
-OnStartupSec=1m
-OnUnitActiveSec={interval_minutes}m
+{timer_schedule}
 Persistent=true
 
 [Install]
