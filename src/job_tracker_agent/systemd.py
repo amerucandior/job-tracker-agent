@@ -76,6 +76,7 @@ Requires=job-tracker.service
 
 [Timer]
 OnBootSec=3m
+OnStartupSec=1m
 OnUnitActiveSec={interval_minutes}m
 Persistent=true
 
