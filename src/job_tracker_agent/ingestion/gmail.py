@@ -152,6 +152,10 @@ class GmailProvider(BaseMailProvider):
         if date_header:
             try:
                 received_at = parsedate_to_datetime(date_header)
+                if received_at.tzinfo is None:
+                    received_at = received_at.replace(tzinfo=timezone.utc)
+                else:
+                    received_at = received_at.astimezone(timezone.utc)
             except Exception:
                 received_at = datetime.now(timezone.utc)
         else:

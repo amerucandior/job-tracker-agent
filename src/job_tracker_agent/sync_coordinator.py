@@ -131,7 +131,11 @@ class SyncCoordinator:
         account_id = f"{provider_name}-account"
         last_sync = self.store.get_last_sync_time(account_id)
         if last_sync:
-            since = last_sync
+            since = (
+                last_sync.replace(tzinfo=timezone.utc)
+                if last_sync.tzinfo is None
+                else last_sync.astimezone(timezone.utc)
+            )
         else:
             since = datetime.now(timezone.utc) - timedelta(days=backfill_days)
 
@@ -142,8 +146,13 @@ class SyncCoordinator:
 
         for msg in messages:
             account_id = msg.account_id
-            if msg.received_at > newest_timestamp:
-                newest_timestamp = msg.received_at
+            msg_time = (
+                msg.received_at.replace(tzinfo=timezone.utc)
+                if msg.received_at.tzinfo is None
+                else msg.received_at.astimezone(timezone.utc)
+            )
+            if msg_time > newest_timestamp:
+                newest_timestamp = msg_time
 
             # 1. Skip if already processed in SQLite
             if self.store.is_processed(account_id, msg.message_id):
