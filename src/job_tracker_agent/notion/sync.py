@@ -150,7 +150,7 @@ class NotionSyncReconciler:
         callout_block = self._build_timeline_toggle_block(extracted, email, is_new=True)
 
         res = self.client.pages.create(
-            parent={"database_id": self.database_id},
+            parent={"type": "database_id", "database_id": self.database_id},
             properties=properties,
             children=[callout_block],
         )

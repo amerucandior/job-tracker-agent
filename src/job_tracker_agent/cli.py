@@ -20,7 +20,7 @@ from job_tracker_agent.config import (
 )
 from job_tracker_agent.ingestion.gmail import GmailProvider
 from job_tracker_agent.ingestion.outlook import OutlookProvider
-from job_tracker_agent.notion.provisioner import NotionProvisioner
+from job_tracker_agent.notion.provisioner import NotionProvisioner, normalize_notion_id
 from job_tracker_agent.sync_coordinator import SyncCoordinator
 from job_tracker_agent.systemd import generate_service_units, run_systemctl_user
 
@@ -106,7 +106,7 @@ def setup_notion(
     config.notion.api_key = api_key
 
     if database_id:
-        config.notion.database_id = database_id.replace("-", "")
+        config.notion.database_id = normalize_notion_id(database_id)
         save_config(config)
         console.print(f"[bold green]✓ Configured existing Notion database ID:[/bold green] {config.notion.database_id}")
         return
@@ -116,17 +116,29 @@ def setup_notion(
             "Enter parent Notion Page ID (from URL) where database will be created"
         )
 
-    config.notion.parent_page_id = parent_page
+    clean_parent_id = normalize_notion_id(parent_page)
+    config.notion.parent_page_id = clean_parent_id
 
-    console.print("[cyan]Provisioning standardized Job Applications database in Notion...[/cyan]")
+    console.print(f"[cyan]Provisioning standardized Job Applications database under page {clean_parent_id}...[/cyan]")
     try:
         provisioner = NotionProvisioner(api_key=api_key)
-        new_db_id = provisioner.create_database(parent_page_id=parent_page)
+        new_db_id = provisioner.create_database(parent_page_id=clean_parent_id)
         config.notion.database_id = new_db_id
         save_config(config)
         console.print(f"[bold green]✓ Successfully provisioned Notion database:[/bold green] {new_db_id}")
     except Exception as e:
-        console.print(f"[bold red]Error provisioning Notion database:[/bold red] {e}")
+        err_msg = str(e)
+        console.print(f"[bold red]Error provisioning Notion database:[/bold red] {err_msg}")
+        if "Could not find page with ID" in err_msg or "ObjectNotFound" in err_msg:
+            console.print(
+                "\n[bold yellow]Notion Permission Required:[/bold yellow]\n"
+                "Your Notion page must be explicitly shared with your integration:\n"
+                "1. Open the page in Notion in your browser.\n"
+                "2. Click the [bold]...[/bold] button in the top right corner.\n"
+                "3. Scroll down to [bold]Connections[/bold] (or [bold]Add connections[/bold]).\n"
+                "4. Search for your integration and click [bold]Connect[/bold].\n"
+                "5. Re-run this command."
+            )
 
 
 @app.command("sync")

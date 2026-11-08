@@ -1,10 +1,23 @@
 """Provisioner for creating the standardized Notion Job Applications database."""
 
 import logging
+import re
 from typing import Any, Optional
 from notion_client import Client
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_notion_id(raw_input: str) -> str:
+    """Normalize a Notion page ID, database ID, or URL into standard 32-char hex string."""
+    cleaned = raw_input.split("?")[0].rstrip("/")
+    if "/" in cleaned:
+        cleaned = cleaned.split("/")[-1]
+    cleaned = cleaned.replace("-", "")
+    match = re.search(r"([a-f0-9]{32})$", cleaned, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return cleaned
 
 
 class NotionProvisioner:
@@ -15,7 +28,7 @@ class NotionProvisioner:
 
     def create_database(self, parent_page_id: str, title: str = "Job Applications") -> str:
         """Create a new database with canonical properties under parent_page_id."""
-        clean_parent_id = parent_page_id.replace("-", "")
+        clean_parent_id = normalize_notion_id(parent_page_id)
 
         properties: dict[str, Any] = {
             "Company": {
@@ -48,7 +61,7 @@ class NotionProvisioner:
         }
 
         response = self.client.databases.create(
-            parent={"page_id": clean_parent_id},
+            parent={"type": "page_id", "page_id": clean_parent_id},
             title=[{"type": "text", "text": {"content": title}}],
             properties=properties,
         )
