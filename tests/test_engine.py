@@ -47,6 +47,19 @@ def test_heuristic_pre_filter():
     )
     assert screener.is_candidate_email(newsletter_msg) is False
 
+    # 4. Ignored system sender (GitHub issue notification mentioning application)
+    github_msg = EmailMessage(
+        account_id="test@test.com",
+        message_id="4",
+        thread_id="t4",
+        provider=IngestionProvider.OUTLOOK,
+        sender_email="notifications@github.com",
+        subject="Re: Facilitate external configuration (multiple application.yaml)",
+        received_at=datetime.now(timezone.utc),
+        body_text="Issue #51933 has been updated.",
+    )
+    assert screener.is_candidate_email(github_msg) is False
+
 
 def test_llm_extractor_json_parsing():
     extractor = LLMExtractor()

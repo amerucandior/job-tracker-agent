@@ -6,7 +6,18 @@ Adheres to CONTEXT.md Heuristic Pre-filter definition.
 import re
 from job_tracker_agent.models import EmailMessage
 
-# Recognized Applicant Tracking System (ATS) domains and subdomains
+# Common developer alert/notification senders that frequently mention words like 'application'
+IGNORED_SYSTEM_SENDERS = {
+    "notifications@github.com",
+    "noreply@github.com",
+    "support@github.com",
+    "gitlab@mg.gitlab.com",
+    "notifications@linear.app",
+    "jira@atlassian.net",
+    "notifications@gitlab.com",
+    "builds@travis-ci.org",
+    "alert@sentry.io",
+}
 KNOWN_ATS_DOMAINS = {
     "greenhouse.io",
     "gh.io",
@@ -75,7 +86,10 @@ class HeuristicPreFilter:
 
     def is_candidate_email(self, message: EmailMessage) -> bool:
         """Return True if message passes ATS domain or recruitment heuristic rules."""
-        sender_email = message.sender_email.lower()
+        sender_email = message.sender_email.lower().strip()
+        if sender_email in IGNORED_SYSTEM_SENDERS:
+            return False
+
         domain = sender_email.split("@")[-1] if "@" in sender_email else ""
 
         # 1. Direct match on recognized ATS provider domain
