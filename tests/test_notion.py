@@ -50,3 +50,28 @@ def test_build_timeline_toggle_block(tmp_path):
     action_items = [c for c in children if c["type"] == "bulleted_list_item"]
     assert len(action_items) == 1
     assert action_items[0]["bulleted_list_item"]["rich_text"][0]["text"]["content"] == "Select time slot on Calendly"
+
+
+def test_find_existing_page_with_data_source(tmp_path):
+    store = CheckpointStore(db_path=tmp_path / "sync.db")
+    reconciler = NotionSyncReconciler(
+        api_key="mock_secret",
+        database_id="mock_db_id",
+        checkpoint_store=store,
+    )
+    reconciler.client = MagicMock()
+    reconciler.client.data_sources.query.return_value = {
+        "results": [
+            {
+                "id": "page-123",
+                "properties": {
+                    "Stage": {"select": {"name": "Screening"}},
+                    "Role": {"rich_text": [{"plain_text": "Software Engineer"}]},
+                },
+            }
+        ]
+    }
+    page_id, stage = reconciler._find_existing_page("thread-xyz", "Acme", "Software Engineer")
+    assert page_id == "page-123"
+    assert stage == "Screening"
+

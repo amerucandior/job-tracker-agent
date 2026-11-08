@@ -5,8 +5,8 @@ Reflects the canonical language defined in CONTEXT.md.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Any, Optional
+from pydantic import BaseModel, Field, field_validator
 
 
 class ApplicationStage(str, Enum):
@@ -50,25 +50,25 @@ class ExtractedApplication(BaseModel):
         description="True if this email is directly related to a job application or hiring process.",
     )
     company: str = Field(
-        ...,
+        default="Unknown Company",
         description="The hiring company or employer name (not the ATS vendor like Greenhouse/Lever).",
     )
     role: str = Field(
-        ...,
+        default="Unknown Role",
         description="The job title or role pursued.",
     )
     stage: ApplicationStage = Field(
-        ...,
+        default=ApplicationStage.APPLIED,
         description="The current hiring milestone indicated by this email.",
     )
     confidence: float = Field(
-        ...,
+        default=0.5,
         ge=0.0,
         le=1.0,
         description="Confidence score between 0.0 and 1.0.",
     )
     review_flag: bool = Field(
-        ...,
+        default=False,
         description="Set to true if there is ambiguity, uncertainty, or a human should verify.",
     )
     summary: str = Field(
@@ -83,6 +83,16 @@ class ExtractedApplication(BaseModel):
         default=None,
         description="Date and time of an upcoming interview if explicitly mentioned, formatted as ISO 8601 or text.",
     )
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def _coerce_role(cls, v: Any) -> str:
+        return v if (v and isinstance(v, str)) else "Unknown Role"
+
+    @field_validator("company", mode="before")
+    @classmethod
+    def _coerce_company(cls, v: Any) -> str:
+        return v if (v and isinstance(v, str)) else "Unknown Company"
 
 
 class TimelineCallout(BaseModel):

@@ -26,6 +26,31 @@ class NotionSyncReconciler:
         self.client = Client(auth=api_key)
         self.database_id = database_id.replace("-", "")
         self.store = checkpoint_store
+        self._data_source_id: Optional[str] = None
+
+    def _get_data_source_id(self) -> str:
+        """Resolve the active data source ID for querying this database."""
+        if self._data_source_id:
+            return self._data_source_id
+        try:
+            db = self.client.databases.retrieve(self.database_id)
+            data_sources = db.get("data_sources", [])
+            if data_sources:
+                self._data_source_id = data_sources[0]["id"]
+                return self._data_source_id
+        except Exception as e:
+            logger.warning(f"Could not retrieve database to find data source: {e}")
+        return self.database_id
+
+    def _query_data_source(self, **kwargs: Any) -> list[dict[str, Any]]:
+        """Query pages in the database via data_sources endpoint."""
+        ds_id = self._get_data_source_id()
+        try:
+            res = self.client.data_sources.query(ds_id, **kwargs)
+            return res.get("results", [])
+        except Exception as e:
+            logger.warning(f"Data source query failed: {e}")
+            return []
 
     def reconcile(
         self, extracted: ExtractedApplication, email: EmailMessage
@@ -81,15 +106,13 @@ class NotionSyncReconciler:
 
         # 2. Query Notion database by Thread IDs property
         try:
-            results = self.client.databases.query(
-                database_id=self.database_id,
+            pages = self._query_data_source(
                 filter={
                     "property": "Thread IDs",
                     "rich_text": {"contains": thread_id},
                 },
                 page_size=1,
             )
-            pages = results.get("results", [])
             if pages:
                 page_id = pages[0]["id"]
                 return (page_id, self._extract_stage_from_page(pages[0]))
@@ -98,15 +121,13 @@ class NotionSyncReconciler:
 
         # 3. Fallback: Query Notion by Company name (exact title match)
         try:
-            results = self.client.databases.query(
-                database_id=self.database_id,
+            pages = self._query_data_source(
                 filter={
                     "property": "Company",
                     "title": {"equals": company},
                 },
                 page_size=5,
             )
-            pages = results.get("results", [])
             if pages:
                 # If multiple roles at company, try matching role
                 normalized_role = role.lower()
