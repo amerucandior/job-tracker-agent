@@ -72,13 +72,19 @@ def auth_outlook(
         "--client-id",
         "-c",
         help="Optional Azure AD / Microsoft Graph Client Application ID.",
-    )
+    ),
+    device_code: bool = typer.Option(
+        True,
+        "--device-code/--browser",
+        help="Use device code flow (default, no redirect URI required) or localhost browser redirect.",
+    ),
 ) -> None:
     """Authenticate an Outlook / Microsoft 365 account via Microsoft Graph."""
     try:
         provider = OutlookProvider(client_id=client_id)
-        console.print("[cyan]Initiating Microsoft Graph OAuth authentication...[/cyan]")
-        success = provider.authenticate(interactive=True)
+        flow_desc = "device code flow" if device_code else "browser loopback flow"
+        console.print(f"[cyan]Initiating Microsoft Graph OAuth authentication ({flow_desc})...[/cyan]")
+        success = provider.authenticate(interactive=True, device_code=device_code)
         if success:
             console.print("[bold green]✓ Outlook successfully authenticated![/bold green]")
         else:

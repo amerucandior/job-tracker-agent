@@ -41,8 +41,8 @@ class OutlookProvider(BaseMailProvider):
     def provider_name(self) -> str:
         return "outlook"
 
-    def authenticate(self, interactive: bool = True) -> bool:
-        """Authenticate using stored MSAL cache or interactive browser flow."""
+    def authenticate(self, interactive: bool = True, device_code: Optional[bool] = None) -> bool:
+        """Authenticate using stored MSAL cache or device code / browser flow."""
         tokens = load_tokens()
         token_data = tokens.get("outlook", {})
         accounts = self._app.get_accounts()
@@ -58,20 +58,27 @@ class OutlookProvider(BaseMailProvider):
         if not interactive:
             return False
 
-        # 2. Interactive acquisition with localhost loopback fallback
-        try:
-            result = self._app.acquire_token_interactive(
-                scopes=OUTLOOK_SCOPES,
-                port=8080,
-                prompt="select_account",
-            )
-        except Exception as e:
-            logger.warning(f"Interactive browser login on port 8080 failed: {e}. Falling back to device code.")
+        # 2. Prefer device code flow when using default public client ID or when requested
+        if device_code or (device_code is None and self.client_id == DEFAULT_MICROSOFT_CLIENT_ID):
             flow = self._app.initiate_device_flow(scopes=OUTLOOK_SCOPES)
             if "user_code" not in flow:
-                raise RuntimeError("Failed to initiate Microsoft device code authentication flow.")
-            print(f"\n{flow.get('message', 'Please visit https://microsoft.com/devicelogin and enter the code.')}\n")
+                raise RuntimeError(f"Failed to initiate Microsoft device code flow: {flow}")
+            print(f"\n{flow.get('message', 'Please visit https://login.microsoft.com/device and enter the code.')}\n")
             result = self._app.acquire_token_by_device_flow(flow)
+        else:
+            try:
+                result = self._app.acquire_token_interactive(
+                    scopes=OUTLOOK_SCOPES,
+                    port=8080,
+                    prompt="select_account",
+                )
+            except Exception as e:
+                logger.warning(f"Interactive browser login on port 8080 failed: {e}. Falling back to device code.")
+                flow = self._app.initiate_device_flow(scopes=OUTLOOK_SCOPES)
+                if "user_code" not in flow:
+                    raise RuntimeError("Failed to initiate Microsoft device code authentication flow.")
+                print(f"\n{flow.get('message', 'Please visit https://login.microsoft.com/device and enter the code.')}\n")
+                result = self._app.acquire_token_by_device_flow(flow)
 
         if result and "access_token" in result:
             self._access_token = result["access_token"]
