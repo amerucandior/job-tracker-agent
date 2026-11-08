@@ -12,11 +12,10 @@ from job_tracker_agent.models import EmailMessage, IngestionProvider
 
 logger = logging.getLogger(__name__)
 
-# Default Microsoft Graph scopes for reading user email and profile
+# Microsoft Graph scopes for reading user email and profile
 OUTLOOK_SCOPES = ["Mail.Read", "User.Read"]
 
-# Default public client ID for personal desktop app integration or custom Azure AD app
-DEFAULT_MICROSOFT_CLIENT_ID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"  # Standard Microsoft Office app client or user custom
+DEFAULT_MICROSOFT_CLIENT_ID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
 GRAPH_ENDPOINT = "https://graph.microsoft.com/v1.0"
 
 
@@ -32,19 +31,38 @@ class OutlookProvider(BaseMailProvider):
         self.authority = authority
         self._access_token: Optional[str] = None
         self._account_email: Optional[str] = None
+
+        self._cache = msal.SerializableTokenCache()
+        tokens = load_tokens()
+        if "outlook_cache" in tokens:
+            try:
+                self._cache.deserialize(tokens["outlook_cache"])
+            except Exception as e:
+                logger.warning(f"Could not deserialize MSAL token cache: {e}")
+
         self._app = msal.PublicClientApplication(
             self.client_id,
             authority=self.authority,
+            token_cache=self._cache,
         )
 
     @property
     def provider_name(self) -> str:
         return "outlook"
 
-    def authenticate(self, interactive: bool = True, device_code: Optional[bool] = None) -> bool:
-        """Authenticate using stored MSAL cache or device code / browser flow."""
-        tokens = load_tokens()
-        token_data = tokens.get("outlook", {})
+    def _persist_cache(self) -> None:
+        """Persist serialized MSAL token cache to tokens.json."""
+        if self._cache.has_state_changed:
+            tokens = load_tokens()
+            tokens["outlook_cache"] = self._cache.serialize()
+            tokens["outlook"] = {
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "account": self._account_email,
+            }
+            save_tokens(tokens)
+
+    def authenticate(self, interactive: bool = True, device_code: bool = False) -> bool:
+        """Authenticate using stored MSAL cache, browser redirect, or device code flow."""
         accounts = self._app.get_accounts()
 
         # 1. Attempt silent token acquisition
@@ -53,47 +71,45 @@ class OutlookProvider(BaseMailProvider):
             if result and "access_token" in result:
                 self._access_token = result["access_token"]
                 self._account_email = accounts[0].get("username")
+                self._persist_cache()
                 return True
 
         if not interactive:
             return False
 
-        # 2. Prefer device code flow when using default public client ID or when requested
-        if device_code or (device_code is None and self.client_id == DEFAULT_MICROSOFT_CLIENT_ID):
+        # 2. Interactive acquisition
+        result = None
+        if device_code:
             flow = self._app.initiate_device_flow(scopes=OUTLOOK_SCOPES)
             if "user_code" not in flow:
                 raise RuntimeError(f"Failed to initiate Microsoft device code flow: {flow}")
             print(f"\n{flow.get('message', 'Please visit https://login.microsoft.com/device and enter the code.')}\n")
+            print("Waiting for browser confirmation... (make sure you complete the 'Consent' / 'Accept' prompt in your browser)\n")
             result = self._app.acquire_token_by_device_flow(flow)
         else:
             try:
+                print("Opening browser for authentication on http://localhost:8080...")
                 result = self._app.acquire_token_interactive(
                     scopes=OUTLOOK_SCOPES,
                     port=8080,
                     prompt="select_account",
                 )
             except Exception as e:
-                logger.warning(f"Interactive browser login on port 8080 failed: {e}. Falling back to device code.")
+                logger.warning(f"Interactive browser login failed: {e}. Falling back to device code.")
                 flow = self._app.initiate_device_flow(scopes=OUTLOOK_SCOPES)
                 if "user_code" not in flow:
                     raise RuntimeError("Failed to initiate Microsoft device code authentication flow.")
                 print(f"\n{flow.get('message', 'Please visit https://login.microsoft.com/device and enter the code.')}\n")
+                print("Waiting for browser confirmation...\n")
                 result = self._app.acquire_token_by_device_flow(flow)
 
         if result and "access_token" in result:
             self._access_token = result["access_token"]
-            tokens["outlook"] = {
-                "token_type": result.get("token_type"),
-                "scope": result.get("scope"),
-                "expires_in": result.get("expires_in"),
-            }
-            save_tokens(tokens)
-
-            # Retrieve user email profile
             self._fetch_profile()
+            self._persist_cache()
             return True
 
-        error_desc = result.get("error_description", "Unknown error")
+        error_desc = result.get("error_description", "Unknown error") if result else "No token response"
         logger.error(f"Failed to acquire Microsoft Graph token: {error_desc}")
         return False
 
