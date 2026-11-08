@@ -22,7 +22,7 @@ OUTLOOK_SCOPES = ["Mail.Read", "User.Read"]
 
 DEFAULT_MICROSOFT_CLIENT_ID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
 GRAPH_ENDPOINT = "https://graph.microsoft.com/v1.0"
-NATIVE_REDIRECT_URI = "https://login.microsoftonline.com/common/oauth2/nativeclient"
+CONSUMER_REDIRECT_URI = "https://login.live.com/oauth20_desktop.srf"
 
 
 class OutlookProvider(BaseMailProvider):
@@ -31,7 +31,7 @@ class OutlookProvider(BaseMailProvider):
     def __init__(
         self,
         client_id: Optional[str] = None,
-        authority: str = "https://login.microsoftonline.com/common",
+        authority: str = "https://login.microsoftonline.com/consumers",
     ) -> None:
         self.client_id = client_id or DEFAULT_MICROSOFT_CLIENT_ID
         self.authority = authority
@@ -96,16 +96,16 @@ class OutlookProvider(BaseMailProvider):
             return self._authenticate_code_paste()
 
     def _authenticate_code_paste(self) -> bool:
-        """Authorize via browser and copy-pasting the redirected URL."""
+        """Authorize via browser and copy-pasting the redirected URL (tailored for personal MSA)."""
         flow = self._app.initiate_auth_code_flow(
             scopes=OUTLOOK_SCOPES,
-            redirect_uri=NATIVE_REDIRECT_URI,
+            redirect_uri=CONSUMER_REDIRECT_URI,
         )
         auth_url = flow.get("auth_uri")
         if not auth_url:
             raise RuntimeError("Failed to initiate Microsoft OAuth authorization code flow.")
 
-        # Create a local redirect launcher to avoid terminal URL truncation of '&' query params
+        # Create local redirect launcher to ensure 100% parameter preservation
         auth_html_path = get_config_dir() / "ms_auth.html"
         html_content = f"""<!DOCTYPE html>
 <html>
@@ -131,14 +131,15 @@ class OutlookProvider(BaseMailProvider):
                 pass
 
         console.print(
-            "\n[bold yellow]Step 2:[/bold yellow] Sign in with your Microsoft/Outlook account and click [bold]Accept[/bold]."
+            "\n[bold yellow]Step 2:[/bold yellow] Sign in with your Microsoft/Outlook account and click [bold]Accept[/bold] (or [bold]Yes[/bold])."
         )
         console.print(
-            "[bold yellow]Step 3:[/bold yellow] When sign in finishes, your browser will redirect to a blank or confirmation page.\n"
+            "[bold yellow]Step 3:[/bold yellow] Your browser will redirect to a blank or confirmation page starting with:\n"
+            "         [cyan]https://login.live.com/oauth20_desktop.srf?code=...[/cyan]\n\n"
             "         [bold]Copy the entire URL from your browser address bar[/bold] and paste it below:\n"
         )
 
-        pasted = input("Paste redirected URL (or code): ").strip()
+        pasted = input("Paste redirected URL (starts with https://login.live.com/...): ").strip()
         if not pasted:
             return False
 
