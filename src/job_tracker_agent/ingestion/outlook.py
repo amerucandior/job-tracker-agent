@@ -1,6 +1,7 @@
 """Outlook / Microsoft 365 ingestion provider using MSAL and Microsoft Graph API."""
 
 from datetime import datetime, timezone
+import json
 import logging
 import subprocess
 from typing import Any, Optional
@@ -23,6 +24,7 @@ OUTLOOK_SCOPES = ["Mail.Read", "User.Read"]
 DEFAULT_MICROSOFT_CLIENT_ID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
 GRAPH_ENDPOINT = "https://graph.microsoft.com/v1.0"
 CONSUMER_REDIRECT_URI = "https://login.live.com/oauth20_desktop.srf"
+FLOW_FILENAME = "ms_flow.json"
 
 
 class OutlookProvider(BaseMailProvider):
@@ -95,6 +97,38 @@ class OutlookProvider(BaseMailProvider):
         else:
             return self._authenticate_code_paste()
 
+    def redeem_url(self, pasted: str, flow: Optional[dict[str, Any]] = None) -> bool:
+        """Redeem an authorization code from a pasted redirect URL using in-memory or persisted flow."""
+        flow_path = get_config_dir() / FLOW_FILENAME
+        if flow is None and flow_path.exists():
+            try:
+                flow = json.loads(flow_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.warning(f"Could not load persisted MSAL flow: {e}")
+
+        if not flow:
+            console.print("[bold red]Error:[/bold red] No active Microsoft auth flow found to redeem this code.")
+            console.print("[dim]Please run 'job-tracker auth outlook' first to initiate a new login flow.[/dim]")
+            return False
+
+        pasted = pasted.strip()
+        if "?" in pasted:
+            parsed = urlparse(pasted)
+            auth_response = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        elif "=" in pasted:
+            auth_response = {k: v[0] for k, v in parse_qs(pasted).items()}
+        else:
+            auth_response = {"code": pasted}
+
+        result = self._app.acquire_token_by_auth_code_flow(flow, auth_response)
+        success = self._handle_token_result(result)
+        if success and flow_path.exists():
+            try:
+                flow_path.unlink()
+            except Exception:
+                pass
+        return success
+
     def _authenticate_code_paste(self) -> bool:
         """Authorize via browser and copy-pasting the redirected URL (tailored for personal MSA)."""
         flow = self._app.initiate_auth_code_flow(
@@ -105,6 +139,11 @@ class OutlookProvider(BaseMailProvider):
         auth_url = flow.get("auth_uri")
         if not auth_url:
             raise RuntimeError("Failed to initiate Microsoft OAuth authorization code flow.")
+
+        # Persist flow to disk so it survives process interruption or external redemption
+        flow_path = get_config_dir() / FLOW_FILENAME
+        flow_path.write_text(json.dumps(flow, indent=2), encoding="utf-8")
+        flow_path.chmod(0o600)
 
         # Create local redirect launcher to ensure 100% parameter preservation
         auth_html_path = get_config_dir() / "ms_auth.html"
@@ -147,16 +186,7 @@ class OutlookProvider(BaseMailProvider):
         if not pasted:
             return False
 
-        if "?" in pasted:
-            parsed = urlparse(pasted)
-            auth_response = {k: v[0] for k, v in parse_qs(parsed.query).items()}
-        elif "=" in pasted:
-            auth_response = {k: v[0] for k, v in parse_qs(pasted).items()}
-        else:
-            auth_response = {"code": pasted}
-
-        result = self._app.acquire_token_by_auth_code_flow(flow, auth_response)
-        return self._handle_token_result(result)
+        return self.redeem_url(pasted, flow=flow)
 
     def _authenticate_device_code(self) -> bool:
         flow = self._app.initiate_device_flow(scopes=OUTLOOK_SCOPES)

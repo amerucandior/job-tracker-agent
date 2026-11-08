@@ -79,6 +79,12 @@ def auth_outlook(
         "-m",
         help="Authentication mode: 'paste' (recommended for personal accounts), 'device', or 'browser'.",
     ),
+    redeem: Optional[str] = typer.Option(
+        None,
+        "--redeem",
+        "-r",
+        help="Pasted redirect URL or authorization code to redeem using saved auth flow.",
+    ),
 ) -> None:
     """Authenticate an Outlook / Microsoft 365 account via Microsoft Graph."""
     config = load_config()
@@ -101,8 +107,13 @@ def auth_outlook(
 
     try:
         provider = OutlookProvider(client_id=target_client_id)
-        console.print(f"[cyan]Initiating Microsoft Graph OAuth authentication (mode: {mode})...[/cyan]")
-        success = provider.authenticate(interactive=True, mode=mode)
+        if redeem:
+            console.print("[cyan]Redeeming Microsoft Graph authorization code...[/cyan]")
+            success = provider.redeem_url(redeem)
+        else:
+            console.print(f"[cyan]Initiating Microsoft Graph OAuth authentication (mode: {mode})...[/cyan]")
+            success = provider.authenticate(interactive=True, mode=mode)
+
         if success:
             console.print("[bold green]✓ Outlook successfully authenticated![/bold green]")
         else:
