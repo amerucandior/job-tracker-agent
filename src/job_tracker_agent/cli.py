@@ -71,7 +71,7 @@ def auth_outlook(
         None,
         "--client-id",
         "-c",
-        help="Optional Azure AD / Microsoft Graph Client Application ID.",
+        help="Azure AD / Microsoft Entra Application (Client) ID.",
     ),
     device_code: bool = typer.Option(
         True,
@@ -80,8 +80,26 @@ def auth_outlook(
     ),
 ) -> None:
     """Authenticate an Outlook / Microsoft 365 account via Microsoft Graph."""
+    config = load_config()
+    target_client_id = client_id or config.outlook.client_id
+
+    if not target_client_id:
+        console.print(
+            "[bold yellow]Azure Application (client) ID Required:[/bold yellow]\n"
+            "Microsoft requires an Azure App Registration for Microsoft Graph Mail access.\n"
+            "1. Visit [cyan]https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade[/cyan]\n"
+            "2. Click [bold]New registration[/bold] (Name: 'Job Tracker').\n"
+            "3. Select [bold]'Accounts in any organizational directory and personal Microsoft accounts'[/bold].\n"
+            "4. Under [bold]Authentication[/bold] > [bold]Advanced settings[/bold], set [bold]'Allow public client flows'[/bold] to [bold]Yes[/bold].\n"
+            "5. Copy the [bold]Application (client) ID[/bold] from the Overview page.\n"
+        )
+        target_client_id = typer.prompt("Enter your Azure Application (client) ID").strip()
+
+    config.outlook.client_id = target_client_id
+    save_config(config)
+
     try:
-        provider = OutlookProvider(client_id=client_id)
+        provider = OutlookProvider(client_id=target_client_id)
         flow_desc = "device code flow" if device_code else "browser loopback flow"
         console.print(f"[cyan]Initiating Microsoft Graph OAuth authentication ({flow_desc})...[/cyan]")
         success = provider.authenticate(interactive=True, device_code=device_code)

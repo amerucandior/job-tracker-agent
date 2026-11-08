@@ -107,7 +107,7 @@ class SyncCoordinator:
 
         if "outlook" in tokens:
             try:
-                outlook = OutlookProvider()
+                outlook = OutlookProvider(client_id=self.config.outlook.client_id)
                 if outlook.authenticate(interactive=False):
                     active.append(outlook)
             except Exception as e:

@@ -68,10 +68,17 @@ class SyncConfig(BaseModel):
     desktop_alerts: bool = Field(default=True, description="Enable notify-send desktop notifications")
 
 
+class OutlookConfig(BaseModel):
+    """Microsoft Outlook / Graph API settings."""
+
+    client_id: Optional[str] = None
+
+
 class AppConfig(BaseModel):
     """Root application configuration."""
 
     notion: NotionConfig = Field(default_factory=NotionConfig)
+    outlook: OutlookConfig = Field(default_factory=OutlookConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     sync: SyncConfig = Field(default_factory=SyncConfig)
 
