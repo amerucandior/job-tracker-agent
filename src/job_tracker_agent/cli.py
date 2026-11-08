@@ -73,10 +73,11 @@ def auth_outlook(
         "-c",
         help="Azure AD / Microsoft Entra Application (Client) ID.",
     ),
-    device_code: bool = typer.Option(
-        True,
-        "--device-code/--browser",
-        help="Use device code flow (default) or browser redirect.",
+    mode: str = typer.Option(
+        "paste",
+        "--mode",
+        "-m",
+        help="Authentication mode: 'paste' (recommended for personal accounts), 'device', or 'browser'.",
     ),
 ) -> None:
     """Authenticate an Outlook / Microsoft 365 account via Microsoft Graph."""
@@ -100,9 +101,8 @@ def auth_outlook(
 
     try:
         provider = OutlookProvider(client_id=target_client_id)
-        flow_desc = "device code flow" if device_code else "browser loopback flow"
-        console.print(f"[cyan]Initiating Microsoft Graph OAuth authentication ({flow_desc})...[/cyan]")
-        success = provider.authenticate(interactive=True, device_code=device_code)
+        console.print(f"[cyan]Initiating Microsoft Graph OAuth authentication (mode: {mode})...[/cyan]")
+        success = provider.authenticate(interactive=True, mode=mode)
         if success:
             console.print("[bold green]✓ Outlook successfully authenticated![/bold green]")
         else:

@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 import logging
 from typing import Any, Optional
+from urllib.parse import parse_qs, urlparse
+import webbrowser
 import msal
 import requests
 from rich.console import Console
@@ -19,6 +21,7 @@ OUTLOOK_SCOPES = ["Mail.Read", "User.Read"]
 
 DEFAULT_MICROSOFT_CLIENT_ID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
 GRAPH_ENDPOINT = "https://graph.microsoft.com/v1.0"
+NATIVE_REDIRECT_URI = "https://login.microsoftonline.com/common/oauth2/nativeclient"
 
 
 class OutlookProvider(BaseMailProvider):
@@ -63,8 +66,12 @@ class OutlookProvider(BaseMailProvider):
             }
             save_tokens(tokens)
 
-    def authenticate(self, interactive: bool = True, device_code: bool = True) -> bool:
-        """Authenticate using stored MSAL cache, device code, or browser flow."""
+    def authenticate(
+        self,
+        interactive: bool = True,
+        mode: str = "paste",
+    ) -> bool:
+        """Authenticate using stored MSAL cache or interactive authorization."""
         accounts = self._app.get_accounts()
 
         # 1. Attempt silent token acquisition
@@ -80,38 +87,84 @@ class OutlookProvider(BaseMailProvider):
             return False
 
         # 2. Interactive acquisition
-        result = None
-        if device_code:
-            flow = self._app.initiate_device_flow(scopes=OUTLOOK_SCOPES)
-            if "user_code" not in flow:
-                raise RuntimeError(f"Failed to initiate Microsoft device code flow: {flow}")
-
-            user_code = flow["user_code"]
-            verify_url = flow.get("verification_uri", "https://login.microsoft.com/device")
-
-            console.print(f"\n[bold yellow]Step 1:[/bold yellow] Open [cyan]{verify_url}[/cyan] in your browser.")
-            console.print(f"[bold yellow]Step 2:[/bold yellow] Enter the code: [bold green]{user_code}[/bold green]")
-            console.print(f"[bold yellow]Step 3:[/bold yellow] Sign in and click [bold]Accept[/bold] on the permissions prompt.\n")
-
-            with console.status("[bold cyan]Waiting for you to complete authorization in browser...[/bold cyan]"):
-                result = self._app.acquire_token_by_device_flow(flow)
+        if mode == "device":
+            return self._authenticate_device_code()
+        elif mode == "browser":
+            return self._authenticate_browser_loopback()
         else:
-            try:
-                console.print("[cyan]Opening browser for authentication on http://localhost:8080...[/cyan]")
-                result = self._app.acquire_token_interactive(
-                    scopes=OUTLOOK_SCOPES,
-                    port=8080,
-                    prompt="select_account",
-                )
-            except Exception as e:
-                logger.warning(f"Interactive browser login failed: {e}. Falling back to device code.")
-                flow = self._app.initiate_device_flow(scopes=OUTLOOK_SCOPES)
-                if "user_code" not in flow:
-                    raise RuntimeError("Failed to initiate Microsoft device code authentication flow.")
-                console.print(f"\nVisit [cyan]{flow.get('verification_uri')}[/cyan] and enter [bold green]{flow['user_code']}[/bold green]\n")
-                with console.status("[bold cyan]Waiting for browser authorization...[/bold cyan]"):
-                    result = self._app.acquire_token_by_device_flow(flow)
+            return self._authenticate_code_paste()
 
+    def _authenticate_code_paste(self) -> bool:
+        """Authorize via browser and copy-pasting the redirected URL (most reliable for personal MSA)."""
+        flow = self._app.initiate_auth_code_flow(
+            scopes=OUTLOOK_SCOPES,
+            redirect_uri=NATIVE_REDIRECT_URI,
+        )
+        auth_url = flow.get("auth_uri")
+        if not auth_url:
+            raise RuntimeError("Failed to initiate Microsoft OAuth authorization code flow.")
+
+        console.print("\n[bold yellow]Step 1:[/bold yellow] Opening authorization URL in your browser...")
+        console.print(f"[cyan]{auth_url}[/cyan]\n")
+        try:
+            webbrowser.open(auth_url)
+        except Exception:
+            pass
+
+        console.print(
+            "[bold yellow]Step 2:[/bold yellow] Sign in with your Microsoft/Outlook account and click [bold]Accept[/bold]."
+        )
+        console.print(
+            "[bold yellow]Step 3:[/bold yellow] Your browser will redirect to a blank or confirmation page.\n"
+            "         [bold]Copy the entire URL from your browser address bar[/bold] and paste it below:\n"
+        )
+
+        pasted = input("Paste redirected URL (starts with https://login.microsoftonline.com/...): ").strip()
+        if not pasted:
+            return False
+
+        if "?" in pasted:
+            parsed = urlparse(pasted)
+            auth_response = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        elif "=" in pasted:
+            auth_response = {k: v[0] for k, v in parse_qs(pasted).items()}
+        else:
+            auth_response = {"code": pasted}
+
+        result = self._app.acquire_token_by_auth_code_flow(flow, auth_response)
+        return self._handle_token_result(result)
+
+    def _authenticate_device_code(self) -> bool:
+        flow = self._app.initiate_device_flow(scopes=OUTLOOK_SCOPES)
+        if "user_code" not in flow:
+            raise RuntimeError(f"Failed to initiate Microsoft device code flow: {flow}")
+
+        user_code = flow["user_code"]
+        verify_url = flow.get("verification_uri", "https://login.microsoft.com/device")
+
+        console.print(f"\n[bold yellow]Step 1:[/bold yellow] Open [cyan]{verify_url}[/cyan] in your browser.")
+        console.print(f"[bold yellow]Step 2:[/bold yellow] Enter the code: [bold green]{user_code}[/bold green]")
+        console.print(f"[bold yellow]Step 3:[/bold yellow] Sign in and click [bold]Accept[/bold] on the permissions prompt.\n")
+
+        with console.status("[bold cyan]Waiting for you to complete authorization in browser...[/bold cyan]"):
+            result = self._app.acquire_token_by_device_flow(flow)
+
+        return self._handle_token_result(result)
+
+    def _authenticate_browser_loopback(self) -> bool:
+        try:
+            console.print("[cyan]Opening browser for authentication on http://localhost:8080...[/cyan]")
+            result = self._app.acquire_token_interactive(
+                scopes=OUTLOOK_SCOPES,
+                port=8080,
+                prompt="select_account",
+            )
+            return self._handle_token_result(result)
+        except Exception as e:
+            logger.warning(f"Browser loopback failed: {e}. Falling back to copy-paste flow.")
+            return self._authenticate_code_paste()
+
+    def _handle_token_result(self, result: Optional[dict[str, Any]]) -> bool:
         if result and "access_token" in result:
             self._access_token = result["access_token"]
             self._fetch_profile()
@@ -120,6 +173,7 @@ class OutlookProvider(BaseMailProvider):
 
         error_desc = result.get("error_description", "Unknown error") if result else "No token response"
         logger.error(f"Failed to acquire Microsoft Graph token: {error_desc}")
+        console.print(f"[bold red]Authentication error:[/bold red] {error_desc}")
         return False
 
     def _fetch_profile(self) -> None:
