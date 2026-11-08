@@ -10,3 +10,7 @@ __pycache__/
 tokens.json
 config.toml
 *client_secret*.json
+.env*
+*.env
+ms_flow.json
+ms_auth.html
